@@ -10,20 +10,7 @@ A Flask web application for Fitness and Gym Management, built as part of the ass
 aceest-fitness/
 ├── app.py                          # Flask application (main source code)
 ├── requirements.txt                # Python dependencies
-├── Dockerfile                      # Container definition
 ├── README.md                       # This file
-├── templates/                      # HTML pages (Jinja2)
-│   ├── base.html
-│   ├── login.html
-│   ├── dashboard.html
-│   ├── add_client.html
-│   ├── client_detail.html
-│   └── edit_client.html
-├── tests/
-│   └── test_app.py                 # Pytest unit tests
-└── .github/
-    └── workflows/
-        └── main.yml                # GitHub Actions CI/CD pipeline
 ```
 
 ---
@@ -59,45 +46,6 @@ http://localhost:5000
 - Username: `admin`
 - Password: `admin123`
 
----
-
-## 🧪 Running Tests Manually
-
-```bash
-# Run all tests with verbose output
-pytest tests/test_app.py -v
-
-# Run a specific test class
-pytest tests/test_app.py::TestAuthentication -v
-
-# Run with coverage report
-pip install pytest-cov
-pytest tests/test_app.py --cov=app --cov-report=term-missing
-```
-
----
-
-##  Docker — Build & Run
-
-### Build the image
-```bash
-docker build -t aceest-fitness:latest .
-```
-
-### Run the container
-```bash
-docker run -p 5000:5000 aceest-fitness:latest
-```
-
-### Run tests inside the container
-```bash
-docker run --rm -e DB_PATH=":memory:" aceest-fitness:latest \
-  python -m pytest tests/test_app.py -v
-```
-
-### Open in browser
-```
-http://localhost:5000
 ```
 
 ---
@@ -109,9 +57,7 @@ This project follows a branching strategy:
 | Branch      | Purpose                              |
 |-------------|--------------------------------------|
 | `main`      | Stable, production-ready code        |
-| `develop`   | Integration branch for new features  |
-| `feature/*` | Individual feature development       |
-| `fix/*`     | Bug fix branches                     |
+
 
 ### Commit message format
 ```
@@ -129,6 +75,4 @@ ci: add GitHub Actions workflow
 - **Backend:** Python 3.12, Flask 3.0
 - **Database:** SQLite (zero-config, file-based)
 - **Testing:** Pytest
-- **Container:** Docker (python:3.12-slim)
-- **CI/CD:** GitHub Actions
-- **Build Server:** Jenkins
+
