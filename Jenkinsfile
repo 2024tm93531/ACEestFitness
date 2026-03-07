@@ -12,21 +12,21 @@ pipeline {
         stage('Install Dependencies') {
             steps {
                 echo 'Installing Python packages...'
-                sh 'pip install -r requirements.txt'
+                sh 'pip3 install -r requirements.txt'
             }
         }
 
         stage('Lint') {
             steps {
                 echo 'Checking for syntax errors...'
-                sh 'python -m py_compile app.py && echo "Lint PASSED"'
+                sh 'python3 -m py_compile app.py && echo "Lint PASSED"'
             }
         }
 
         stage('Test') {
             steps {
                 echo 'Running unit tests...'
-                sh 'pytest tests/test_app.py -v'
+                sh 'python3 -m pytest tests/test_app.py -v'
             }
         }
 
