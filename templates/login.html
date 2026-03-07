@@ -1,0 +1,94 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>ACEest Login</title>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      font-family: 'Segoe UI', Arial, sans-serif;
+      background: #0f0f0f;
+      color: #e0e0e0;
+      min-height: 100vh;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+    }
+    .login-box {
+      background: #1e1e1e;
+      border: 1px solid #2a2a2a;
+      border-radius: 12px;
+      padding: 2.5rem 2rem;
+      width: 100%;
+      max-width: 400px;
+      box-shadow: 0 8px 32px rgba(0,0,0,0.6);
+    }
+    .logo { text-align: center; margin-bottom: 2rem; }
+    .logo .symbol { font-size: 3rem; }
+    .logo h1 { color: #d4af37; font-size: 1.6rem; letter-spacing: 2px; }
+    .logo p  { color: #888; font-size: 0.85rem; margin-top: 0.3rem; }
+    .form-group { margin-bottom: 1.2rem; }
+    .form-group label { display: block; margin-bottom: 0.4rem; font-size: 0.85rem; color: #aaa; }
+    .form-control {
+      width: 100%; padding: 0.6rem 0.9rem;
+      background: #2a2a2a; color: #e0e0e0;
+      border: 1px solid #3a3a3a; border-radius: 7px;
+      font-size: 1rem;
+    }
+    .form-control:focus { outline: none; border-color: #d4af37; }
+    .btn-login {
+      width: 100%; padding: 0.7rem;
+      background: #d4af37; color: #1a1a1a;
+      border: none; border-radius: 7px;
+      font-size: 1rem; font-weight: 700;
+      cursor: pointer; letter-spacing: 1px;
+      transition: opacity .2s;
+    }
+    .btn-login:hover { opacity: 0.85; }
+    .alert {
+      padding: 0.65rem 1rem;
+      border-radius: 6px; margin-bottom: 1rem;
+      font-size: 0.88rem;
+    }
+    .alert-danger  { background: #4d1e1e; color: #f0a0a0; border-left: 4px solid #e74c3c; }
+    .alert-success { background: #1e4d2b; color: #a3d9a5; border-left: 4px solid #2ecc71; }
+    .alert-info    { background: #1a3a4d; color: #80c4f0; border-left: 4px solid #3498db; }
+    .hint { text-align: center; color: #555; font-size: 0.78rem; margin-top: 1.2rem; }
+  </style>
+</head>
+<body>
+  <div class="login-box">
+    <div class="logo">
+      <div class="symbol">⚡</div>
+      <h1>ACEest FITNESS</h1>
+      <p>Gym & Performance Management</p>
+    </div>
+
+    {% with messages = get_flashed_messages(with_categories=true) %}
+      {% if messages %}
+        {% for category, message in messages %}
+          <div class="alert alert-{{ category }}">{{ message }}</div>
+        {% endfor %}
+      {% endif %}
+    {% endwith %}
+
+    <form method="POST" action="{{ url_for('login') }}">
+      <div class="form-group">
+        <label for="username">Username</label>
+        <input id="username" name="username" type="text"
+               class="form-control" placeholder="Enter username" required autocomplete="username"/>
+      </div>
+      <div class="form-group">
+        <label for="password">Password</label>
+        <input id="password" name="password" type="password"
+               class="form-control" placeholder="Enter password" required autocomplete="current-password"/>
+      </div>
+      <button type="submit" class="btn-login">LOGIN</button>
+    </form>
+
+    <p class="hint">Default: admin / admin123</p>
+  </div>
+</body>
+</html>

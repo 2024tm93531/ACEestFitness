@@ -1,0 +1,157 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>ACEest Fitness & Gym</title>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      font-family: 'Segoe UI', Arial, sans-serif;
+      background: #0f0f0f;
+      color: #e0e0e0;
+      min-height: 100vh;
+    }
+
+    /* ── NAV ── */
+    nav {
+      background: #d4af37;
+      padding: 0 2rem;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      height: 60px;
+      box-shadow: 0 2px 8px rgba(0,0,0,0.5);
+    }
+    nav .brand { font-size: 1.4rem; font-weight: 700; color: #1a1a1a; letter-spacing: 1px; }
+    nav .nav-links a {
+      color: #1a1a1a; text-decoration: none; margin-left: 1.5rem;
+      font-weight: 600; font-size: 0.9rem;
+    }
+    nav .nav-links a:hover { text-decoration: underline; }
+
+    /* ── FLASH MESSAGES ── */
+    .flash-container { padding: 0.5rem 2rem; }
+    .alert {
+      padding: 0.75rem 1.2rem;
+      border-radius: 6px;
+      margin: 0.4rem 0;
+      font-size: 0.9rem;
+    }
+    .alert-success { background: #1e4d2b; color: #a3d9a5; border-left: 4px solid #2ecc71; }
+    .alert-danger  { background: #4d1e1e; color: #f0a0a0; border-left: 4px solid #e74c3c; }
+    .alert-warning { background: #4d3d0f; color: #f0d080; border-left: 4px solid #f39c12; }
+    .alert-info    { background: #1a3a4d; color: #80c4f0; border-left: 4px solid #3498db; }
+
+    /* ── MAIN CONTENT ── */
+    .container { max-width: 1200px; margin: 2rem auto; padding: 0 1.5rem; }
+
+    /* ── CARDS ── */
+    .card {
+      background: #1e1e1e;
+      border-radius: 10px;
+      padding: 1.5rem;
+      margin-bottom: 1.5rem;
+      border: 1px solid #2a2a2a;
+    }
+    .card h2 { color: #d4af37; margin-bottom: 1rem; font-size: 1.2rem; }
+
+    /* ── FORM ELEMENTS ── */
+    .form-group { margin-bottom: 1rem; }
+    .form-group label { display: block; margin-bottom: 0.35rem; font-size: 0.85rem; color: #aaa; }
+    .form-control {
+      width: 100%; padding: 0.5rem 0.75rem;
+      background: #2a2a2a; color: #e0e0e0;
+      border: 1px solid #3a3a3a; border-radius: 6px;
+      font-size: 0.95rem;
+    }
+    .form-control:focus { outline: none; border-color: #d4af37; }
+    select.form-control option { background: #2a2a2a; }
+
+    /* ── BUTTONS ── */
+    .btn {
+      display: inline-block; padding: 0.5rem 1.2rem;
+      border: none; border-radius: 6px; cursor: pointer;
+      font-size: 0.9rem; font-weight: 600; text-decoration: none;
+      transition: opacity .2s;
+    }
+    .btn:hover { opacity: 0.85; }
+    .btn-gold    { background: #d4af37; color: #1a1a1a; }
+    .btn-red     { background: #e74c3c; color: #fff; }
+    .btn-green   { background: #2ecc71; color: #1a1a1a; }
+    .btn-blue    { background: #3498db; color: #fff; }
+    .btn-outline { background: transparent; border: 1px solid #d4af37; color: #d4af37; }
+    .btn-sm { padding: 0.3rem 0.8rem; font-size: 0.8rem; }
+
+    /* ── TABLE ── */
+    table { width: 100%; border-collapse: collapse; font-size: 0.9rem; }
+    th { background: #2a2a2a; color: #d4af37; padding: 0.75rem 1rem; text-align: left; }
+    td { padding: 0.65rem 1rem; border-bottom: 1px solid #2a2a2a; }
+    tr:hover td { background: #252525; }
+
+    /* ── STAT BOXES ── */
+    .stats-row { display: flex; gap: 1rem; margin-bottom: 1.5rem; flex-wrap: wrap; }
+    .stat-box {
+      flex: 1; min-width: 150px;
+      background: #1e1e1e; border: 1px solid #2a2a2a;
+      border-radius: 10px; padding: 1.2rem; text-align: center;
+    }
+    .stat-box .stat-number { font-size: 2rem; font-weight: 700; color: #d4af37; }
+    .stat-box .stat-label  { font-size: 0.8rem; color: #888; margin-top: 0.3rem; }
+
+    /* ── BADGE ── */
+    .badge {
+      display: inline-block; padding: 0.2rem 0.6rem;
+      border-radius: 999px; font-size: 0.75rem; font-weight: 600;
+    }
+    .badge-green  { background: #1e4d2b; color: #2ecc71; }
+    .badge-red    { background: #4d1e1e; color: #e74c3c; }
+    .badge-yellow { background: #4d3d0f; color: #f39c12; }
+
+    /* ── GRID ── */
+    .grid-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 1.5rem; }
+    .grid-3 { display: grid; grid-template-columns: repeat(3,1fr); gap: 1rem; }
+    @media(max-width:700px) { .grid-2,.grid-3 { grid-template-columns:1fr; } }
+
+    /* ── FOOTER ── */
+    footer { text-align: center; padding: 1.5rem; color: #555; font-size: 0.8rem; }
+
+    /* ── PAGE HEADER ── */
+    .page-header {
+      display: flex; align-items: center;
+      justify-content: space-between; margin-bottom: 1.5rem;
+    }
+    .page-header h1 { font-size: 1.6rem; color: #d4af37; }
+  </style>
+</head>
+<body>
+
+  {% if session.username %}
+  <nav>
+    <span class="brand">⚡ ACEest FITNESS</span>
+    <div class="nav-links">
+      <a href="{{ url_for('dashboard') }}">Dashboard</a>
+      <a href="{{ url_for('add_client') }}">+ Add Client</a>
+      <a href="{{ url_for('logout') }}">Logout ({{ session.username }})</a>
+    </div>
+  </nav>
+  {% endif %}
+
+  {% with messages = get_flashed_messages(with_categories=true) %}
+    {% if messages %}
+      <div class="flash-container">
+        {% for category, message in messages %}
+          <div class="alert alert-{{ category }}">{{ message }}</div>
+        {% endfor %}
+      </div>
+    {% endif %}
+  {% endwith %}
+
+  <div class="container">
+    {% block content %}{% endblock %}
+  </div>
+
+  <footer>ACEest Fitness &amp; Gym Management System &copy; 2025</footer>
+</body>
+</html>
