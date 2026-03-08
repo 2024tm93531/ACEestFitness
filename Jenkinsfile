@@ -8,14 +8,6 @@ pipeline {
                     url: 'https://github.com/2024tm93531/ACEestFitness.git'
             }
         }
-
-        stage('Install Dependencies') {
-            steps {
-                echo 'Installing Python packages...'
-                sh 'pip3 install -r requirements.txt'
-            }
-        }
-
         stage('Lint') {
             steps {
                 echo 'Checking for syntax errors...'
