@@ -2,15 +2,16 @@ pipeline {
     agent any
 
     environment {
-        IMAGE_NAME    = "aceest-fitness"
-        APP_PORT      = "5000"
+        IMAGE_NAME      = "aceest-fitness"
+        APP_PORT        = "5000"
+        CONTAINER_NAME  = "aceest-fitness-app"
         // Semantic version tag: e.g. v1.0.42
-        BUILD_VERSION = "v1.0.${BUILD_NUMBER}"
+        BUILD_VERSION   = "v1.0.${BUILD_NUMBER}"
         // Full image references
         IMAGE_VERSIONED = "${IMAGE_NAME}:${BUILD_VERSION}"
         IMAGE_LATEST    = "${IMAGE_NAME}:latest"
         // Snapshot of the previous latest — used for rollback
-        PREV_IMAGE    = "${IMAGE_NAME}:previous"
+        PREV_IMAGE      = "${IMAGE_NAME}:previous"
     }
 
     stages {
@@ -33,7 +34,7 @@ pipeline {
         stage('Lint') {
             steps {
                 echo 'Checking syntax...'
-                sh 'python3 -m py_compile app.py && echo "✅ Lint PASSED"'
+                sh 'python3 -m py_compile app.py && echo "Lint PASSED"'
             }
         }
 
@@ -47,14 +48,12 @@ pipeline {
         stage('Tag Previous as Rollback') {
             steps {
                 echo 'Preserving current latest as rollback target...'
-                // If a "latest" image already exists, snapshot it as "previous"
-                // so we can roll back to it if this build breaks production.
                 sh """
                     if docker image inspect ${IMAGE_LATEST} > /dev/null 2>&1; then
                         docker tag ${IMAGE_LATEST} ${PREV_IMAGE}
-                        echo "✅ Saved ${IMAGE_LATEST} → ${PREV_IMAGE}"
+                        echo "Saved ${IMAGE_LATEST} as ${PREV_IMAGE}"
                     else
-                        echo "ℹNo existing latest image — skipping snapshot"
+                        echo "No existing latest image — skipping snapshot"
                     fi
                 """
             }
@@ -63,7 +62,6 @@ pipeline {
         stage('Docker Build') {
             steps {
                 echo "Building image ${IMAGE_VERSIONED}..."
-                // Build with both a versioned tag and latest
                 sh """
                     docker build \\
                         --label "build.version=${BUILD_VERSION}" \\
@@ -73,20 +71,106 @@ pipeline {
                         -t ${IMAGE_LATEST} \\
                         .
                 """
-                echo "✅ Tagged as ${IMAGE_VERSIONED} and ${IMAGE_LATEST}"
+                echo "Tagged as ${IMAGE_VERSIONED} and ${IMAGE_LATEST}"
             }
         }
 
         stage('Verify Image') {
             steps {
-                echo '🔬 Verifying built image...'
+                echo 'Verifying built image...'
                 sh """
                     docker image inspect ${IMAGE_VERSIONED} > /dev/null 2>&1 && \\
-                        echo "✅ Image ${IMAGE_VERSIONED} verified" || \\
-                        (echo "❌ Image verification failed" && exit 1)
+                        echo "Image ${IMAGE_VERSIONED} verified" || \\
+                        (echo "Image verification failed" && exit 1)
                 """
-                // Print image size and labels for audit trail
                 sh "docker image ls ${IMAGE_NAME} --format 'Tag: {{.Tag}} | Size: {{.Size}} | Created: {{.CreatedAt}}'"
+            }
+        }
+
+        stage('Deploy Container') {
+            steps {
+                echo "Deploying container: ${CONTAINER_NAME} on port ${APP_PORT}..."
+                sh """
+                    # Stop and remove any existing container with the same name
+                    if docker ps -a --format '{{.Names}}' | grep -q "^${CONTAINER_NAME}\$"; then
+                        echo "Stopping existing container: ${CONTAINER_NAME}"
+                        docker stop ${CONTAINER_NAME} || true
+                        docker rm   ${CONTAINER_NAME} || true
+                        echo "Old container removed"
+                    fi
+
+                    # Start the new container
+                    docker run -d \\
+                        --name ${CONTAINER_NAME} \\
+                        --restart unless-stopped \\
+                        -p ${APP_PORT}:${APP_PORT} \\
+                        -e FLASK_ENV=production \\
+                        -l "app.version=${BUILD_VERSION}" \\
+                        ${IMAGE_VERSIONED}
+
+                    echo "Container ${CONTAINER_NAME} started"
+                """
+            }
+        }
+
+        stage('Health Check') {
+            steps {
+                echo "Waiting for application to be ready on port ${APP_PORT}..."
+                sh """
+                    # Retry for up to 30 seconds (10 attempts × 3s)
+                    RETRIES=10
+                    DELAY=3
+                    URL="http://localhost:${APP_PORT}/health"
+
+                    for i in \$(seq 1 \$RETRIES); do
+                        echo "Health check attempt \$i / \$RETRIES — \$URL"
+                        STATUS=\$(curl -s -o /dev/null -w "%{http_code}" \$URL || echo "000")
+
+                        if [ "\$STATUS" = "200" ]; then
+                            echo "Application is UP — HTTP \$STATUS"
+                            echo "--- Response body ---"
+                            curl -s \$URL
+                            echo ""
+                            exit 0
+                        fi
+
+                        echo "Not ready yet (HTTP \$STATUS) — retrying in \${DELAY}s..."
+                        sleep \$DELAY
+                    done
+
+                    echo "Health check FAILED after \$RETRIES attempts"
+                    docker logs ${CONTAINER_NAME} --tail=50
+                    exit 1
+                """
+            }
+        }
+
+        stage('Smoke Test') {
+            steps {
+                echo 'Running smoke tests against live container...'
+                sh """
+                    BASE="http://localhost:${APP_PORT}"
+
+                    check() {
+                        STATUS=\$(curl -s -o /dev/null -w "%{http_code}" "\$1")
+                        if [ "\$STATUS" = "\$2" ]; then
+                            echo "  PASS  GET \$1 → HTTP \$STATUS"
+                        else
+                            echo "  FAIL  GET \$1 → expected \$2, got \$STATUS"
+                            exit 1
+                        fi
+                    }
+
+                    check "\$BASE/"                         200
+                    check "\$BASE/health"                   200
+                    check "\$BASE/workouts"                 200
+                    check "\$BASE/workouts/beginner"        200
+                    check "\$BASE/workouts/intermediate"    200
+                    check "\$BASE/workouts/advanced"        200
+                    check "\$BASE/workouts/invalid"         404
+
+                    echo "All smoke tests passed"
+                """
             }
         }
 
@@ -97,13 +181,15 @@ pipeline {
         success {
             script {
                 echo """
-╔══════════════════════════════════════════════╗
-║   ✅  BUILD SUCCESSFUL                       ║
-╠══════════════════════════════════════════════╣
-║  Version : ${env.BUILD_VERSION}              ║
-║  Image   : ${env.IMAGE_VERSIONED}            ║
-║  Commit  : ${env.GIT_COMMIT?.take(7)}        ║
-╚══════════════════════════════════════════════╝
+╔══════════════════════════════════════════════════════╗
+║   BUILD SUCCESSFUL & APPLICATION RUNNING             ║
+╠══════════════════════════════════════════════════════╣
+║  Version   : ${env.BUILD_VERSION}
+║  Image     : ${env.IMAGE_VERSIONED}
+║  Container : ${env.CONTAINER_NAME}
+║  URL       : http://localhost:${env.APP_PORT}
+║  Commit    : ${env.GIT_COMMIT?.take(7)}
+╚══════════════════════════════════════════════════════╝
                 """
             }
             // Keep only the last 3 versioned images to save disk space
@@ -119,36 +205,42 @@ pipeline {
         failure {
             script {
                 echo """
-╔══════════════════════════════════════════════╗
-║   ❌  BUILD FAILED — Initiating Rollback     ║
-╠══════════════════════════════════════════════╣
-║  Version : ${env.BUILD_VERSION}              ║
-╚══════════════════════════════════════════════╝
+╔══════════════════════════════════════════════════════╗
+║   BUILD FAILED — Initiating Rollback                 ║
+╠══════════════════════════════════════════════════════╣
+║  Version : ${env.BUILD_VERSION}
+╚══════════════════════════════════════════════════════╝
                 """
             }
-            // ── ROLLBACK STRATEGY ────────────────────────────────────────
-            // Restore the "previous" snapshot back to "latest" so the
-            // last known-good image stays active.
             sh """
-                echo "Checking for rollback image: ${IMAGE_PREV}"
-
+                # ── ROLLBACK: Restore previous image & restart container ──
                 if docker image inspect ${PREV_IMAGE} > /dev/null 2>&1; then
-                    echo "Rolling back: ${PREV_IMAGE} → ${IMAGE_LATEST}"
+                    echo "Rolling back image: ${PREV_IMAGE} → ${IMAGE_LATEST}"
                     docker tag ${PREV_IMAGE} ${IMAGE_LATEST}
-                    echo "✅ Rollback complete — ${IMAGE_LATEST} restored"
+
+                    # Restart the container from the restored image
+                    docker stop ${CONTAINER_NAME} || true
+                    docker rm   ${CONTAINER_NAME} || true
+                    docker run -d \\
+                        --name ${CONTAINER_NAME} \\
+                        --restart unless-stopped \\
+                        -p ${APP_PORT}:${APP_PORT} \\
+                        ${IMAGE_LATEST}
+
+                    echo "Rollback complete — ${CONTAINER_NAME} running previous version"
                 else
-                    echo "⚠️  No rollback image found — this may be the first build"
+                    echo "No rollback image found — this may be the first build"
                 fi
 
-                if docker image inspect ${IMAGE_VERSIONED} > /dev/null 2>&1; then
-                    docker rmi ${IMAGE_VERSIONED} || true
-                    echo "Removed failed image ${IMAGE_VERSIONED}"
-                fi
+                # Remove the broken versioned image
+                docker rmi ${IMAGE_VERSIONED} || true
             """
         }
 
         always {
             echo "Build ${BUILD_VERSION} | Result: ${currentBuild.currentResult}"
+            // Print running containers for visibility
+            sh "docker ps --filter name=${CONTAINER_NAME} --format 'Container: {{.Names}} | Image: {{.Image}} | Status: {{.Status}} | Ports: {{.Ports}}' || true"
         }
 
     }
