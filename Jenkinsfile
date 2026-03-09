@@ -17,10 +17,8 @@ pipeline {
 
         stage('Setup Python Environment') {
             steps {
-                echo '=== Installing Python and dependencies ==='
+                echo '=== Setting up Python virtual environment ==='
                 sh '''
-                    apt-get update -y -qq
-                    apt-get install -y python3 python3-pip python3-venv -qq
                     python3 -m venv venv
                     . venv/bin/activate
                     pip install --upgrade pip -q
@@ -67,11 +65,20 @@ pipeline {
                 echo '=== Stopping old container and deploying latest ==='
                 sh '''
                     docker stop aceest-app 2>/dev/null || true
-                    docker rm aceest-app 2>/dev/null || true
+                    docker rm   aceest-app 2>/dev/null || true
+
+                    # Kill ANY other container holding port 5000
+                    CONFLICT=$(docker ps --filter "publish=5000" --format "{{.ID}}")
+                    if [ -n "$CONFLICT" ]; then
+                        echo "Found container occupying port 5000 — stopping it..."
+                        echo "$CONFLICT" | xargs docker stop
+                        echo "$CONFLICT" | xargs docker rm 2>/dev/null || true
+                    fi
 
                     docker run -d \
                         --name aceest-app \
                         -p 5000:5000 \
+                        --restart unless-stopped \
                         ${IMAGE_NAME}:latest
 
                     echo "=== App deployed at http://localhost:5000 ==="
@@ -117,6 +124,7 @@ pipeline {
                 '''
             }
         }
+
     }
 
     post {
