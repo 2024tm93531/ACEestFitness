@@ -84,23 +84,29 @@ pipeline {
             steps {
                 echo '=== Verifying deployment health ==='
                 sh '''
-                    sleep 3
+                    sleep 5
                     if docker ps | grep -q aceest-app; then
                         echo "Deployment SUCCESS - container is healthy"
                         docker ps | grep aceest-app
                     else
                         echo "Container crashed - triggering rollback..."
 
+                        # Exclude current bad tag, sort numerically, pick highest = last stable
                         PREV_TAG=$(docker images ${IMAGE_NAME} \
-                            --format "{{.Tag}}" | grep "^v1\\." | sed -n 2p)
+                            --format "{{.Tag}}" \
+                            | grep "^v1\\." \
+                            | grep -v "^${BUILD_TAG}$" \
+                            | sort -t. -k2 -rn \
+                            | head -1)
 
                         if [ -n "$PREV_TAG" ]; then
                             echo "Rolling back to ${IMAGE_NAME}:${PREV_TAG}"
                             docker stop aceest-app 2>/dev/null || true
-                            docker rm aceest-app 2>/dev/null || true
+                            docker rm   aceest-app 2>/dev/null || true
                             docker run -d \
                                 --name aceest-app \
                                 -p 5000:5000 \
+                                --restart unless-stopped \
                                 ${IMAGE_NAME}:${PREV_TAG}
                             echo "Rollback complete - running ${PREV_TAG}"
                         else
