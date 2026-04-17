@@ -1,219 +1,264 @@
-# ACEest Fitness & Gym — DevOps CI/CD Assignment (Phase 2)
+# ACEest Fitness & Gym – DevOps CI/CD Pipeline
 
-A Flask-based gym management web application with a fully automated CI/CD pipeline covering containerisation, static analysis, and five Kubernetes deployment strategies.
+> **Assignment 1 – Introduction to DevOps (CSIZG514/SEZG514)**  
+> ACEest Functional Fitness Management System – Flask Web Application
 
 ---
 
-## Project Structure
+## Project Overview
+
+This repository implements a full DevOps CI/CD pipeline for the **ACEest Fitness & Gym** management web application. The application is built with **Flask (Python)** and the pipeline automates testing, linting, Docker image assembly, and build verification using **GitHub Actions** and **Jenkins**.
+
+---
+
+## Repository Structure
 
 ```
-ACEestFitness/
-├── app.py                        # Flask application (core)
-├── requirements.txt              # Python dependencies
-├── Dockerfile                    # Multi-stage production image
-├── Jenkinsfile                   # Phase 2 Jenkins pipeline (parameterised)
-├── sonar-project.properties      # SonarQube configuration
-│
+aceest-devops/
+├── app.py                        ← Main Flask application (all routes & business logic)
+├── requirements.txt              ← Python dependencies
+├── Dockerfile                    ← Docker container definition
+├── Jenkinsfile                   ← Jenkins pipeline configuration
+├── README.md                     ← This file
+├── templates/
+│   ├── base.html                 ← Shared HTML layout
+│   ├── login.html                ← Login page
+│   ├── dashboard.html            ← Main dashboard
+│   ├── clients.html              ← Client listing
+│   ├── add_client.html           ← Add/update client form
+│   ├── client_detail.html        ← Individual client page
+│   └── add_workout.html          ← Log workout form
 ├── tests/
-│   ├── test_app.py               # Phase 1 unit tests
-│   └── test_phase2.py            # Phase 2 extended tests
-│
-├── k8s/
-│   ├── namespace.yaml            # aceest namespace
-│   ├── configmap.yaml            # ConfigMap + Secret
-│   ├── blue-green/
-│   │   ├── blue-deployment.yaml
-│   │   ├── green-deployment.yaml
-│   │   └── service-switch.yaml
-│   ├── canary/
-│   │   └── canary-deployment.yaml
-│   ├── shadow/
-│   │   └── shadow-deployment.yaml
-│   ├── ab-testing/
-│   │   └── ab-deployment.yaml
-│   └── rolling-update/
-│       └── rolling-update.yaml   # Includes HPA
-│
-└── .github/workflows/
-    └── main.yml                  # GitHub Actions pipeline
+│   └── test_app.py               ← Pytest test suite (30+ tests)
+└── .github/
+    └── workflows/
+        └── main.yml              ← GitHub Actions CI/CD pipeline
 ```
 
 ---
 
-## Quick Start (Local)
+## Local Setup & Execution
+
+### Prerequisites
+
+- Python 3.11 or newer
+- pip (Python package manager)
+- Git
+
+### Step 1: Clone the Repository
+
+```bash
+git clone https://github.com/2024tm93524/ACEestFitness.git
+cd aceest-devops
+```
+
+### Step 2: Create a Virtual Environment (recommended)
+
+```bash
+# Create virtual environment
+python -m venv venv
+
+# Activate it
+# On Windows:
+venv\Scripts\activate
+# On Mac/Linux:
+source venv/bin/activate
+```
+
+### Step 3: Install Dependencies
 
 ```bash
 pip install -r requirements.txt
-python app.py           # runs on http://localhost:5000
-# Default login: admin / admin123
+python.exe -m pip install --upgrade pip
 ```
 
-### Run Tests
+### Step 4: Run the Application
 
 ```bash
+python app.py
+```
+
+Open your browser and go to: **http://localhost:5000**
+
+Default login: `admin` / `admin123`
+
+---
+
+## Running Tests Manually
+
+### Install Test Dependencies
+
+```bash
+pip install pytest pytest-flask
+```
+
+### Run All Tests
+
+```bash
+pytest tests/ -v
+```
+
+### Run with Coverage Report
+
+```bash
+pip install pytest-cov
 pytest tests/ -v --cov=app --cov-report=term-missing
 ```
 
----
-
-## CI/CD Pipeline Overview
+### Expected Output
 
 ```
-GitHub Push
-    │
-    ▼
-Checkout Code
-    │
-    ▼
-Python Env Setup (venv)
-    │
-    ▼
-Lint — flake8 (E9, F63, F7, F82)
-    │
-    ▼
-Unit Tests — pytest (test-results.xml + coverage.xml)
-    │
-    ▼
-SonarQube Analysis + Quality Gate
-    │
-    ▼
-Docker Build & Tag  →  Push to Docker Hub
-    │
-    ▼
-Kubernetes Deploy (strategy parameter)
-    │
-    ▼
-Post-Deploy Health Check → Auto-Rollback on failure
+tests/test_app.py::test_health_endpoint PASSED
+tests/test_app.py::test_root_redirects_to_login PASSED
+tests/test_app.py::test_login_page_loads PASSED
+tests/test_app.py::test_login_with_valid_credentials PASSED
+... (30+ tests, all passing)
 ```
 
 ---
 
-## Deployment Strategies
+## Docker – Build & Run
 
-### 1. Rolling Update (default)
-Kubernetes replaces pods one at a time. `maxUnavailable: 0` ensures zero downtime.
+### Build the Docker Image
 
 ```bash
-kubectl apply -f k8s/rolling-update/rolling-update.yaml -n aceest
-kubectl rollout status deployment/aceest-rolling -n aceest
-# Rollback:
-kubectl rollout undo deployment/aceest-rolling -n aceest
+docker build -t aceest-fitness:latest .
 ```
 
-### 2. Blue-Green
-Two identical environments. Traffic switches instantly between them via a Service selector update.
+### Run the Container
 
 ```bash
-kubectl apply -f k8s/blue-green/blue-deployment.yaml  -n aceest
-kubectl apply -f k8s/blue-green/green-deployment.yaml -n aceest
-# Test green on port 30081, then switch:
-# Edit service-switch.yaml: version: blue → version: green
-kubectl apply -f k8s/blue-green/service-switch.yaml -n aceest
-# Rollback: revert selector back to blue
+docker run -p 5000:5000 aceest-fitness:latest
 ```
 
-### 3. Canary Release
-New version receives a small slice of traffic (default 10%) via replica ratio.
+Open browser at: **http://localhost:5000**
+
+### Run Tests Inside the Container
 
 ```bash
-kubectl apply -f k8s/canary/canary-deployment.yaml -n aceest
-# Scale canary from 1 to 9 replicas to promote:
-kubectl scale deployment aceest-canary --replicas=9 -n aceest
-kubectl scale deployment aceest-stable --replicas=1 -n aceest
-# Rollback:
-kubectl delete deployment aceest-canary -n aceest
+# Start container with bash
+docker run -it aceest-fitness:latest bash
+
+# Inside container:
+pytest tests/ -v
 ```
 
-### 4. Shadow Deployment
-Production handles all real traffic. An Nginx sidecar mirrors every request to the shadow pod — users see zero impact.
+### Stop the Container
 
 ```bash
-kubectl apply -f k8s/shadow/shadow-deployment.yaml -n aceest
-# Monitor shadow logs:
-kubectl logs -l version=shadow -c shadow-app -n aceest -f
-# Remove shadow:
-kubectl delete deployment aceest-shadow -n aceest
-```
-
-### 5. A/B Testing
-Variant A (control) and Variant B (test) run simultaneously. Users with cookie `ab_group=b` are routed to Variant B via Nginx Ingress.
-
-```bash
-kubectl apply -f k8s/ab-testing/ab-deployment.yaml -n aceest
-# Test Variant B:
-curl -H "Cookie: ab_group=b" http://<cluster-ip>/
-# Rollback Variant B:
-kubectl delete deployment aceest-variant-b -n aceest
+docker ps                         # find container ID
+docker stop <container_id>
 ```
 
 ---
 
-## Jenkins Pipeline Parameters
+## Jenkins BUILD Setup
 
-| Parameter         | Default          | Description                                      |
-|-------------------|------------------|--------------------------------------------------|
-| `DEPLOY_STRATEGY` | `rolling-update` | One of: rolling-update, blue-green, canary, shadow, ab-testing |
-| `DOCKER_TAG`      | `v2.BUILD_NUMBER`| Custom image tag (leave blank to auto-generate)  |
-| `ROLLBACK_ON_FAIL`| `true`           | Auto-rollback on post-deploy health check failure |
-| `CANARY_WEIGHT`   | `10`             | Canary traffic % (canary strategy only)          |
+Jenkins is used as the **primary BUILD environment** — it pulls code from GitHub, runs linting, executes tests, and builds the Docker image.
 
-### Jenkins Credentials Required
+### Step 1: Install Jenkins
 
-| ID                    | Type              | Value                     |
-|-----------------------|-------------------|---------------------------|
-| `dockerhub-username`  | Secret text       | Your Docker Hub username  |
-| `dockerhub-credentials` | Username/Password | Docker Hub login         |
-| `sonar-token`         | Secret text       | SonarQube auth token      |
-
----
-
-## SonarQube Setup
-
-1. Run SonarQube: `docker run -d -p 9000:9000 sonarqube:lts-community`
-2. Login at `http://localhost:9000` (admin / admin)
-3. Create project key: `aceest-fitness`
-4. Generate token → add to Jenkins as `sonar-token`
-5. Install **SonarQube Scanner** plugin in Jenkins
-6. Configure server in Jenkins → Manage Jenkins → Configure System → SonarQube servers
-
----
-
-## Minikube (Local Kubernetes)
+**On Windows (using Docker — easiest method):**
 
 ```bash
-minikube start
-kubectl apply -f k8s/namespace.yaml
-kubectl apply -f k8s/configmap.yaml
-# Replace YOUR_DOCKERHUB_USERNAME in YAML files, then:
-kubectl apply -f k8s/rolling-update/rolling-update.yaml -n aceest
-minikube service aceest-rolling-service -n aceest
+docker run -d -p 8080:8080 -p 50000:50000 \
+  -v jenkins_home:/var/jenkins_home \
+  --name jenkins jenkins/jenkins:lts
 ```
 
----
+Open Jenkins at: **http://localhost:8080**
 
-## Docker Hub
-
+Get the initial password:
 ```bash
-docker build -t <your-username>/aceest-fitness:v2.0 .
-docker push <your-username>/aceest-fitness:v2.0
-docker push <your-username>/aceest-fitness:latest
+docker exec jenkins cat /var/jenkins_home/secrets/initialAdminPassword
 ```
+
+### Step 2: Configure Jenkins
+
+1. Open http://localhost:8080
+2. Enter the initial admin password
+3. Click "Install suggested plugins"
+4. Create your admin user
+5. Install the **Pipeline** plugin (Manage Jenkins → Plugins → Available)
+
+### Step 3: Create a Pipeline Job
+
+1. Click **New Item**
+2. Name it `aceest-fitness`
+3. Select **Pipeline** → click OK
+4. Under **Pipeline Definition**: select `Pipeline script from SCM`
+5. SCM: `Git`
+6. Repository URL: `https://github.com/2024tm93524/ACEestFitness.git`
+7. Branch: `*/main`
+8. Script Path: `Jenkinsfile`
+9. Click **Save**
+
+### Step 4: Trigger a Build
+
+Click **Build Now** in the Jenkins job dashboard.
+
+Jenkins will run these stages (as defined in `Jenkinsfile`):
+1. **Checkout** – pulls latest code from GitHub
+2. **Setup Python** – creates virtualenv, installs dependencies
+3. **Lint Check** – runs flake8 syntax validation
+4. **Unit Tests** – runs pytest suite
+5. **Docker Build** – builds the Docker image
 
 ---
 
-## Application Endpoints
+## GitHub Actions CI/CD Pipeline
 
-| Endpoint                        | Auth | Description                  |
-|---------------------------------|------|------------------------------|
-| `GET /`                         | No   | Redirects to login/dashboard |
-| `GET /login`                    | No   | Login page                   |
-| `GET /dashboard`                | Yes  | Client overview              |
-| `GET /clients/add`              | Yes  | Add client form              |
-| `GET /clients/<name>`           | Yes  | Client detail page           |
-| `GET /clients/<name>/edit`      | Yes  | Edit client form             |
-| `POST /clients/<name>/delete`   | Yes  | Delete client                |
-| `POST /clients/<name>/workout/add` | Yes | Log workout              |
-| `POST /clients/<name>/progress/add` | Yes | Add progress entry      |
-| `GET /api/health`               | No   | Liveness/readiness probe     |
-| `GET /api/clients`              | Yes  | JSON list of all clients     |
-| `GET /api/clients/<name>/progress` | Yes | JSON progress entries    |
+The pipeline is defined in `.github/workflows/main.yml` and is automatically triggered on every **push** or **pull request** to the `main` branch.
+
+### Pipeline Stages
+
+| Stage | Description |
+|-------|-------------|
+| **Build & Lint** | Installs dependencies, runs flake8 syntax check |
+| **Unit Tests** | Runs the full pytest suite |
+| **Docker Build** | Builds Docker image and runs a health check against it |
+
+### Viewing Pipeline Results
+
+1. Push your code to GitHub
+2. Click the **Actions** tab in your GitHub repository
+3. Each workflow run shows the status of all 3 jobs
+
+### Pipeline Logic Explained
+
+```
+Push to main
+     │
+     ▼
+┌─────────────────┐
+│  Build & Lint   │  ← Fails here = syntax error in code
+└────────┬────────┘
+         │ (passes)
+         ▼
+┌─────────────────┐
+│   Unit Tests    │  ← Fails here = broken functionality
+└────────┬────────┘
+         │ (passes)
+         ▼
+┌─────────────────┐
+│  Docker Build   │  ← Fails here = Dockerfile issue
+└─────────────────┘
+```
+
+Jobs run sequentially (`needs:` keyword) — a failing stage stops the pipeline.
+
+---
+
+## Application Features
+
+| Feature | Description |
+|---------|-------------|
+| **Login System** | Role-based authentication (Admin / Staff) |
+| **Client Management** | Add, view, and manage gym clients with full profiles |
+| **Fitness Programs** | Fat Loss, Muscle Gain, Beginner — with calorie calculations |
+| **Workout Logging** | Record workout sessions per client |
+| **Progress Tracking** | Log weekly adherence percentages |
+| **REST API** | JSON endpoints (`/api/programs`, `/api/clients`) |
+| **Health Check** | `/health` endpoint for pipeline verification |
+
+---

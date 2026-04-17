@@ -1,50 +1,34 @@
 # ─────────────────────────────────────────────
-# ACEest Fitness & Gym — Phase 2 Dockerfile
-# Multi-stage build for leaner production image
+# Stage 1: Build image
+# Uses Python 3.12 slim — small and secure base
 # ─────────────────────────────────────────────
-
-# ── Stage 1: Builder ──────────────────────────
-FROM python:3.12-slim AS builder
-
-WORKDIR /build
-
-COPY requirements.txt .
-RUN pip install --no-cache-dir --prefix=/install -r requirements.txt
-
-# ── Stage 2: Production image ─────────────────
 FROM python:3.12-slim
 
+# Metadata
 LABEL maintainer="ACEest DevOps Team"
-LABEL description="ACEest Fitness & Gym — Flask Web Application"
-LABEL version="2.0.0"
+LABEL description="ACEest Fitness & Gym Flask Web Application"
 
-# Security: run as non-root user
-RUN useradd -m -u 1000 aceest
+# Don't write .pyc files; send stdout/stderr straight to terminal
+ENV PYTHONDONTWRITEBYTECODE=1
+ENV PYTHONUNBUFFERED=1
 
-ENV PYTHONDONTWRITEBYTECODE=1 \
-    PYTHONUNBUFFERED=1 \
-    FLASK_ENV=production
-
+# Set a non-root working directory inside the container
 WORKDIR /app
 
-# Copy installed packages from builder stage
-COPY --from=builder /install /usr/local
+# ── Install dependencies first (separate layer = faster rebuilds) ──
+# Copy only requirements first so Docker caches this layer
+COPY requirements.txt .
+RUN pip install --no-cache-dir -r requirements.txt
 
-# Copy application source
-COPY --chown=aceest:aceest . .
+# ── Copy the rest of the application ──
+COPY . .
 
-# Create data directory for SQLite DB persistence
-RUN mkdir -p /data && chown aceest:aceest /data
-
-# Initialise DB (creates tables + seeds admin user)
+# Initialise the database (creates tables + seeds admin user)
 RUN python -c "from app import init_db; init_db()"
 
-# Switch to non-root user
-USER aceest
-
+# Expose Flask's default port
 EXPOSE 5000
 
-HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=3 \
-    CMD python -c "import urllib.request; urllib.request.urlopen('http://localhost:5000/api/health')" || exit 1
-
+# ── Run the app ──
+# Use python directly (simple & straightforward for this assignment)
 CMD ["python", "app.py"]
