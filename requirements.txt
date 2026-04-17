@@ -1,2 +1,5 @@
 flask
 pytest
+pytest-flask
+pytest-cov
+flake8
