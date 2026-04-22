@@ -49,6 +49,28 @@ pipeline {
             }
         }
 
+        // SonarQube scans the source code for bugs, vulnerabilities, and code quality issues
+        stage('SonarQube Static Analysis') {
+            environment {
+                // This pulls the scanner using the Name field from your screenshot
+                SCANNER_HOME = tool 'sonarqube-scanner-int' 
+            }
+            steps {
+                echo '=== Running SonarQube static analysis ==='
+                withSonarQubeEnv('sonarqube-scanner-int') {
+                    sh '''
+                        . venv/bin/activate
+                        
+                        $SCANNER_HOME/bin/sonar-scanner \
+                          -Dsonar.projectKey=aceest-fitness \
+                          -Dsonar.sources=. \
+                          -Dsonar.python.version=3 \
+                          -Dsonar.sourceEncoding=UTF-8
+                    '''
+                }
+            }
+        }
+
         stage('Docker Build & Tag') {
             steps {
                 echo "=== Building Docker image: ${IMAGE_NAME}:${BUILD_TAG} ==="
@@ -65,7 +87,7 @@ pipeline {
                 echo '=== Stopping old container and deploying latest ==='
                 sh '''
                     docker stop aceest-app 2>/dev/null || true
-                    docker rm   aceest-app 2>/dev/null || true
+                    docker rm aceest-app 2>/dev/null || true
 
                     # Kill ANY other container holding port 5000
                     CONFLICT=$(docker ps --filter "publish=5000" --format "{{.ID}}")
@@ -98,7 +120,6 @@ pipeline {
                     else
                         echo "Container crashed - triggering rollback..."
 
-                        # Exclude current bad tag, sort numerically, pick highest = last stable
                         PREV_TAG=$(docker images ${IMAGE_NAME} \
                             --format "{{.Tag}}" \
                             | grep "^v1\\." \
@@ -109,7 +130,7 @@ pipeline {
                         if [ -n "$PREV_TAG" ]; then
                             echo "Rolling back to ${IMAGE_NAME}:${PREV_TAG}"
                             docker stop aceest-app 2>/dev/null || true
-                            docker rm   aceest-app 2>/dev/null || true
+                            docker rm aceest-app 2>/dev/null || true
                             docker run -d \
                                 --name aceest-app \
                                 -p 5000:5000 \
@@ -124,7 +145,6 @@ pipeline {
                 '''
             }
         }
-
     }
 
     post {
