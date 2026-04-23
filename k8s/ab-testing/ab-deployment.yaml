@@ -1,0 +1,173 @@
+# ─────────────────────────────────────────────
+# A/B TESTING DEPLOYMENT STRATEGY
+#
+# Two variants served to different user segments:
+#   Variant A (control)  — existing UI/features
+#   Variant B (test)     — new UI or feature flag
+#
+# Traffic routing is based on HTTP headers or cookies
+# using an Nginx Ingress annotation or session affinity.
+#
+# Usage:
+#   kubectl apply -f ab-deployment.yaml
+#   Users with cookie ab_group=b are routed to variant-b.
+#   All others go to variant-a.
+# ─────────────────────────────────────────────
+
+# Variant A — Control group
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: aceest-variant-a
+  namespace: aceest
+  labels:
+    app: aceest-fitness
+    variant: a
+    strategy: ab-testing
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: aceest-fitness
+      variant: a
+  template:
+    metadata:
+      labels:
+        app: aceest-fitness
+        variant: a
+    spec:
+      containers:
+        - name: aceest-app
+          image: YOUR_DOCKERHUB_USERNAME/aceest-fitness:variant-a
+          ports:
+            - containerPort: 5000
+          env:
+            - name: AB_VARIANT
+              value: "A"
+          envFrom:
+            - configMapRef:
+                name: aceest-config
+            - secretRef:
+                name: aceest-secret
+          readinessProbe:
+            httpGet:
+              path: /api/health
+              port: 5000
+            initialDelaySeconds: 10
+            periodSeconds: 5
+          resources:
+            requests:
+              memory: "128Mi"
+              cpu: "100m"
+            limits:
+              memory: "256Mi"
+              cpu: "250m"
+---
+# Variant B — Test group (new feature / UI)
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: aceest-variant-b
+  namespace: aceest
+  labels:
+    app: aceest-fitness
+    variant: b
+    strategy: ab-testing
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: aceest-fitness
+      variant: b
+  template:
+    metadata:
+      labels:
+        app: aceest-fitness
+        variant: b
+    spec:
+      containers:
+        - name: aceest-app
+          image: YOUR_DOCKERHUB_USERNAME/aceest-fitness:variant-b
+          ports:
+            - containerPort: 5000
+          env:
+            - name: AB_VARIANT
+              value: "B"
+          envFrom:
+            - configMapRef:
+                name: aceest-config
+            - secretRef:
+                name: aceest-secret
+          readinessProbe:
+            httpGet:
+              path: /api/health
+              port: 5000
+            initialDelaySeconds: 10
+            periodSeconds: 5
+          resources:
+            requests:
+              memory: "128Mi"
+              cpu: "100m"
+            limits:
+              memory: "256Mi"
+              cpu: "250m"
+---
+# Service for Variant A
+apiVersion: v1
+kind: Service
+metadata:
+  name: aceest-variant-a-svc
+  namespace: aceest
+spec:
+  type: ClusterIP
+  selector:
+    app: aceest-fitness
+    variant: a
+  ports:
+    - port: 5000
+      targetPort: 5000
+---
+# Service for Variant B
+apiVersion: v1
+kind: Service
+metadata:
+  name: aceest-variant-b-svc
+  namespace: aceest
+spec:
+  type: ClusterIP
+  selector:
+    app: aceest-fitness
+    variant: b
+  ports:
+    - port: 5000
+      targetPort: 5000
+---
+# Nginx Ingress with cookie-based routing
+# Users with cookie ab_group=b → Variant B, all others → Variant A
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: aceest-ab-ingress
+  namespace: aceest
+  annotations:
+    nginx.ingress.kubernetes.io/use-regex: "true"
+    # Route users with ab_group=b cookie to variant-b
+    nginx.ingress.kubernetes.io/configuration-snippet: |
+      if ($cookie_ab_group = "b") {
+        set $ab_backend "variant-b";
+      }
+      if ($cookie_ab_group != "b") {
+        set $ab_backend "variant-a";
+      }
+spec:
+  ingressClassName: nginx
+  rules:
+    - http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: aceest-variant-a-svc     # Default backend
+                port:
+                  number: 5000
