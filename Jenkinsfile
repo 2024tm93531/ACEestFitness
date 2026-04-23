@@ -7,11 +7,6 @@ pipeline {
             choices: ['rolling-update', 'blue-green', 'canary', 'shadow', 'ab-testing'],
             description: 'Kubernetes deployment strategy'
         )
-        // string(
-        //     name: 'DOCKER_TAG',
-        //     defaultValue: '',
-        //     description: 'Docker tag — leave blank to auto-generate v2.BUILD_NUMBER'
-        // )
         booleanParam(
             name: 'ROLLBACK_ON_FAIL',
             defaultValue: true,
@@ -28,6 +23,8 @@ pipeline {
         IMAGE_NAME = "aceest-fitness"
         BUILD_TAG  = "v1.${BUILD_NUMBER}"
         KUBE_NS    = "aceest"
+        // Explicit kubeconfig path
+        KUBECONFIG = "/var/jenkins_home/.kube/config"
     }
 
     stages {
@@ -73,10 +70,8 @@ pipeline {
             }
         }
 
-        // SonarQube scans the source code for bugs, vulnerabilities, and code quality issues
         stage('SonarQube Static Analysis') {
             environment {
-                // This pulls the scanner using the Name field from your screenshot
                 SCANNER_HOME = tool 'sonarqube-scanner-int' 
             }
             steps {
@@ -106,97 +101,175 @@ pipeline {
             }
         }
 
+        // NEW STAGE: Validate Kubernetes Access
+        stage('Validate Kubernetes Access') {
+            steps {
+                echo '=== Validating Kubernetes cluster connectivity ==='
+                script {
+                    try {
+                        sh '''
+                            echo "--- Checking kubeconfig file ---"
+                            if [ ! -f "$KUBECONFIG" ]; then
+                                echo "ERROR: kubeconfig not found at $KUBECONFIG"
+                                echo "Available directories in /var/jenkins_home:"
+                                ls -la /var/jenkins_home/ || true
+                                exit 1
+                            fi
+                            
+                            echo "kubeconfig found at: $KUBECONFIG"
+                            ls -la "$KUBECONFIG"
+                            
+                            echo ""
+                            echo "--- Testing kubectl version ---"
+                            kubectl version --client
+                            
+                            echo ""
+                            echo "--- Testing cluster connection ---"
+                            kubectl cluster-info
+                            
+                            echo ""
+                            echo "--- Listing available nodes ---"
+                            kubectl get nodes -o wide
+                            
+                            echo ""
+                            echo "--- Checking authentication ---"
+                            kubectl auth can-i create deployments --all-namespaces
+                            
+                            echo ""
+                            echo "--- Current context ---"
+                            kubectl config current-context
+                            
+                            echo "✓ Kubernetes access validated successfully"
+                        '''
+                    } catch (Exception e) {
+                        echo "❌ ERROR: Cannot access Kubernetes cluster"
+                        echo "Exception: ${e.message}"
+                        echo ""
+                        echo "TROUBLESHOOTING STEPS:"
+                        echo "1. Verify kubeconfig is mounted into Jenkins container"
+                        echo "2. Check kubeconfig file permissions: chmod 600 ~/.kube/config"
+                        echo "3. Verify Kubernetes cluster is running and accessible"
+                        echo "4. Check network connectivity to Kubernetes API server"
+                        error("Kubernetes validation failed - see logs above for details")
+                    }
+                }
+            }
+        }
+
         stage('Kubernetes Deployment') {
             steps {
-                echo "=== Stage 8: Kubernetes Deploy — Strategy: ${params.DEPLOY_STRATEGY} ==="
+                echo "=== Stage: Kubernetes Deploy — Strategy: ${params.DEPLOY_STRATEGY} ==="
                 script {
-                    sh "kubectl apply -f k8s/namespace.yaml"
-                    sh "kubectl apply -f k8s/configmap.yaml"
+                    try {
+                        sh '''
+                            echo "--- Creating/verifying namespace ---"
+                            kubectl create namespace ${KUBE_NS} --dry-run=client -o yaml | kubectl apply -f -
+                            kubectl get namespace ${KUBE_NS}
+                            
+                            echo ""
+                            echo "--- Applying configmap ---"
+                            kubectl apply -f k8s/configmap.yaml -n ${KUBE_NS}
+                        '''
 
-                    switch (params.DEPLOY_STRATEGY) {
+                        switch (params.DEPLOY_STRATEGY) {
 
-                        case 'rolling-update':
-                            echo "Deploying: Rolling Update"
-                            sh """
-                                kubectl apply -f k8s/rolling-update/rolling-update.yaml -n ${KUBE_NS}
-                                kubectl set image deployment/aceest-rolling \
-                                    aceest-app=${IMAGE_NAME}:${BUILD_TAG} \
-                                    -n ${KUBE_NS} --record
-                                kubectl rollout status deployment/aceest-rolling \
-                                    -n ${KUBE_NS} --timeout=120s
-                            """
-                            break
+                            case 'rolling-update':
+                                echo "Deploying: Rolling Update"
+                                sh """
+                                    set -e
+                                    kubectl apply -f k8s/rolling-update/rolling-update.yaml -n ${KUBE_NS}
+                                    kubectl set image deployment/aceest-rolling \\
+                                        aceest-app=${IMAGE_NAME}:${BUILD_TAG} \\
+                                        -n ${KUBE_NS} --record
+                                    kubectl rollout status deployment/aceest-rolling \\
+                                        -n ${KUBE_NS} --timeout=120s
+                                """
+                                break
 
-                        case 'blue-green':
-                            echo "Deploying: Blue-Green"
-                            sh """
-                                sed -i 's|aceest-fitness:green|${IMAGE_NAME}:${BUILD_TAG}|g' \
-                                    k8s/blue-green/green-deployment.yaml
-                                kubectl apply -f k8s/blue-green/green-deployment.yaml -n ${KUBE_NS}
-                                kubectl rollout status deployment/aceest-green \
-                                    -n ${KUBE_NS} --timeout=120s
+                            case 'blue-green':
+                                echo "Deploying: Blue-Green"
+                                sh """
+                                    set -e
+                                    sed -i 's|aceest-fitness:green|${IMAGE_NAME}:${BUILD_TAG}|g' \\
+                                        k8s/blue-green/green-deployment.yaml
+                                    kubectl apply -f k8s/blue-green/green-deployment.yaml -n ${KUBE_NS}
+                                    kubectl rollout status deployment/aceest-green \\
+                                        -n ${KUBE_NS} --timeout=120s
 
-                                GREEN_IP=\$(kubectl get svc aceest-green-staging \
-                                    -n ${KUBE_NS} -o jsonpath='{.spec.clusterIP}')
-                                if curl -sf http://\${GREEN_IP}:5000/api/health | grep -q '"ok"'; then
-                                    sed -i 's/version: blue/version: green/' \
-                                        k8s/blue-green/service-switch.yaml
-                                    kubectl apply -f k8s/blue-green/service-switch.yaml -n ${KUBE_NS}
-                                    echo "Traffic switched to GREEN."
-                                else
-                                    echo "Green health check FAILED — keeping BLUE live."
-                                    exit 1
-                                fi
-                            """
-                            break
+                                    GREEN_IP=\$(kubectl get svc aceest-green-staging \\
+                                        -n ${KUBE_NS} -o jsonpath='{.spec.clusterIP}')
+                                    
+                                    echo "Testing Green deployment health at: \${GREEN_IP}:5000"
+                                    if curl -sf http://\${GREEN_IP}:5000/api/health | grep -q '"ok"'; then
+                                        echo "✓ Green health check PASSED"
+                                        sed -i 's/version: blue/version: green/' \\
+                                            k8s/blue-green/service-switch.yaml
+                                        kubectl apply -f k8s/blue-green/service-switch.yaml -n ${KUBE_NS}
+                                        echo "Traffic switched to GREEN."
+                                    else
+                                        echo "❌ Green health check FAILED"
+                                        exit 1
+                                    fi
+                                """
+                                break
 
-                        case 'canary':
-                            echo "Deploying: Canary (${params.CANARY_WEIGHT}% traffic)"
-                            sh """
-                                TOTAL=10
-                                CANARY_REPLICAS=\$(( ${params.CANARY_WEIGHT} * TOTAL / 100 ))
-                                [ "\$CANARY_REPLICAS" -lt 1 ] && CANARY_REPLICAS=1
-                                STABLE_REPLICAS=\$(( TOTAL - CANARY_REPLICAS ))
+                            case 'canary':
+                                echo "Deploying: Canary (${params.CANARY_WEIGHT}% traffic)"
+                                sh """
+                                    set -e
+                                    TOTAL=10
+                                    CANARY_REPLICAS=\$(( ${params.CANARY_WEIGHT} * TOTAL / 100 ))
+                                    [ "\$CANARY_REPLICAS" -lt 1 ] && CANARY_REPLICAS=1
+                                    STABLE_REPLICAS=\$(( TOTAL - CANARY_REPLICAS ))
 
-                                sed -i 's|aceest-fitness:canary|${IMAGE_NAME}:${BUILD_TAG}|g' \
-                                    k8s/canary/canary-deployment.yaml
-                                kubectl apply -f k8s/canary/canary-deployment.yaml -n ${KUBE_NS}
-                                kubectl scale deployment aceest-stable \
-                                    --replicas=\$STABLE_REPLICAS -n ${KUBE_NS}
-                                kubectl scale deployment aceest-canary \
-                                    --replicas=\$CANARY_REPLICAS -n ${KUBE_NS}
-                                kubectl rollout status deployment/aceest-canary \
-                                    -n ${KUBE_NS} --timeout=120s
-                                echo "Canary live: \$CANARY_REPLICAS/10 replicas = ~${params.CANARY_WEIGHT}% traffic"
-                            """
-                            break
+                                    echo "Canary replicas: \$CANARY_REPLICAS/\$TOTAL"
+                                    echo "Stable replicas: \$STABLE_REPLICAS/\$TOTAL"
 
-                        case 'shadow':
-                            echo "Deploying: Shadow"
-                            sh """
-                                sed -i 's|aceest-fitness:shadow|${IMAGE_NAME}:${BUILD_TAG}|g' \
-                                    k8s/shadow/shadow-deployment.yaml
-                                kubectl apply -f k8s/shadow/shadow-deployment.yaml -n ${KUBE_NS}
-                                kubectl rollout status deployment/aceest-shadow \
-                                    -n ${KUBE_NS} --timeout=120s
-                                echo "Shadow deployment active — mirroring production traffic."
-                            """
-                            break
+                                    sed -i 's|aceest-fitness:canary|${IMAGE_NAME}:${BUILD_TAG}|g' \\
+                                        k8s/canary/canary-deployment.yaml
+                                    kubectl apply -f k8s/canary/canary-deployment.yaml -n ${KUBE_NS}
+                                    kubectl scale deployment aceest-stable \\
+                                        --replicas=\$STABLE_REPLICAS -n ${KUBE_NS}
+                                    kubectl scale deployment aceest-canary \\
+                                        --replicas=\$CANARY_REPLICAS -n ${KUBE_NS}
+                                    kubectl rollout status deployment/aceest-canary \\
+                                        -n ${KUBE_NS} --timeout=120s
+                                    echo "✓ Canary live: \$CANARY_REPLICAS/10 replicas = ~${params.CANARY_WEIGHT}% traffic"
+                                """
+                                break
 
-                        case 'ab-testing':
-                            echo "Deploying: A/B Testing"
-                            sh """
-                                sed -i 's|aceest-fitness:variant-b|${IMAGE_NAME}:${BUILD_TAG}|g' \
-                                    k8s/ab-testing/ab-deployment.yaml
-                                kubectl apply -f k8s/ab-testing/ab-deployment.yaml -n ${KUBE_NS}
-                                kubectl rollout status deployment/aceest-variant-b \
-                                    -n ${KUBE_NS} --timeout=120s
-                                echo "A/B Testing live — Variant B = ${BUILD_TAG}"
-                            """
-                            break
+                            case 'shadow':
+                                echo "Deploying: Shadow"
+                                sh """
+                                    set -e
+                                    sed -i 's|aceest-fitness:shadow|${IMAGE_NAME}:${BUILD_TAG}|g' \\
+                                        k8s/shadow/shadow-deployment.yaml
+                                    kubectl apply -f k8s/shadow/shadow-deployment.yaml -n ${KUBE_NS}
+                                    kubectl rollout status deployment/aceest-shadow \\
+                                        -n ${KUBE_NS} --timeout=120s
+                                    echo "✓ Shadow deployment active — mirroring production traffic."
+                                """
+                                break
 
-                        default:
-                            error "Unknown DEPLOY_STRATEGY: ${params.DEPLOY_STRATEGY}"
+                            case 'ab-testing':
+                                echo "Deploying: A/B Testing"
+                                sh """
+                                    set -e
+                                    sed -i 's|aceest-fitness:variant-b|${IMAGE_NAME}:${BUILD_TAG}|g' \\
+                                        k8s/ab-testing/ab-deployment.yaml
+                                    kubectl apply -f k8s/ab-testing/ab-deployment.yaml -n ${KUBE_NS}
+                                    kubectl rollout status deployment/aceest-variant-b \\
+                                        -n ${KUBE_NS} --timeout=120s
+                                    echo "✓ A/B Testing live — Variant B = ${BUILD_TAG}"
+                                """
+                                break
+
+                            default:
+                                error "Unknown DEPLOY_STRATEGY: ${params.DEPLOY_STRATEGY}"
+                        }
+                    } catch (Exception e) {
+                        echo "❌ Deployment failed: ${e.message}"
+                        error("Kubernetes deployment failed")
                     }
                 }
             }
@@ -204,110 +277,59 @@ pipeline {
 
         stage('Post-Deploy Health Check') {
             steps {
-                echo '=== Stage 9: Health Check & Auto-Rollback ==='
+                echo '=== Post-Deploy Health Check & Auto-Rollback ==='
                 script {
-                    sh 'sleep 10'
-                    def healthy = sh(
-                        script: """
-                            kubectl get pods -n ${KUBE_NS} -l app=aceest-fitness \
-                                --field-selector=status.phase=Running --no-headers | wc -l
-                        """,
-                        returnStdout: true
-                    ).trim().toInteger()
+                    try {
+                        sh 'sleep 10'
+                        def healthy = sh(
+                            script: """
+                                kubectl get pods -n ${KUBE_NS} -l app=aceest-fitness \\
+                                    --field-selector=status.phase=Running --no-headers | wc -l
+                            """,
+                            returnStdout: true
+                        ).trim().toInteger()
 
-                    echo "Running pods found: ${healthy}"
+                        echo "Running pods found: ${healthy}"
 
-                    if (healthy < 1) {
-                        if (params.ROLLBACK_ON_FAIL) {
-                            echo "ROLLING BACK — no healthy pods detected."
-                            sh """
-                                kubectl rollout undo deployment/aceest-rolling  -n ${KUBE_NS} || true
-                                kubectl rollout undo deployment/aceest-canary   -n ${KUBE_NS} || true
-                                kubectl rollout undo deployment/aceest-green    -n ${KUBE_NS} || true
-                                kubectl rollout undo deployment/aceest-variant-b -n ${KUBE_NS} || true
-                                echo "Rollback complete."
-                            """
+                        if (healthy < 1) {
+                            if (params.ROLLBACK_ON_FAIL) {
+                                echo "⚠️ ROLLING BACK — no healthy pods detected."
+                                sh """
+                                    kubectl rollout undo deployment/aceest-rolling  -n ${KUBE_NS} || true
+                                    kubectl rollout undo deployment/aceest-canary   -n ${KUBE_NS} || true
+                                    kubectl rollout undo deployment/aceest-green    -n ${KUBE_NS} || true
+                                    kubectl rollout undo deployment/aceest-variant-b -n ${KUBE_NS} || true
+                                    echo "Rollback complete."
+                                """
+                            }
+                            error "Health check FAILED — 0 running pods after deploy."
                         }
-                        error "Health check FAILED — 0 running pods after deploy."
-                    }
 
-                    echo "Health check PASSED — ${healthy} pod(s) running."
-                    sh "kubectl get pods -n ${KUBE_NS} -l app=aceest-fitness"
+                        echo "✓ Health check PASSED — ${healthy} pod(s) running."
+                        sh "kubectl get pods -n ${KUBE_NS} -l app=aceest-fitness"
+                    } catch (Exception e) {
+                        echo "❌ Health check error: ${e.message}"
+                        error("Post-deploy health check failed")
+                    }
                 }
             }
         }
-
-        // stage('Deploy Latest Image') {
-        //     steps {
-        //         echo '=== Stopping old container and deploying latest ==='
-        //         sh '''
-        //             docker stop aceest-app 2>/dev/null || true
-        //             docker rm aceest-app 2>/dev/null || true
-
-        //             # Kill ANY other container holding port 5000
-        //             CONFLICT=$(docker ps --filter "publish=5000" --format "{{.ID}}")
-        //             if [ -n "$CONFLICT" ]; then
-        //                 echo "Found container occupying port 5000 — stopping it..."
-        //                 echo "$CONFLICT" | xargs docker stop
-        //                 echo "$CONFLICT" | xargs docker rm 2>/dev/null || true
-        //             fi
-
-        //             docker run -d \
-        //                 --name aceest-app \
-        //                 -p 5000:5000 \
-        //                 --restart unless-stopped \
-        //                 ${IMAGE_NAME}:latest
-
-        //             echo "=== App deployed at http://localhost:5000 ==="
-        //             docker ps | grep aceest-app
-        //         '''
-        //     }
-        // }
-
-        // stage('Rollback Check') {
-        //     steps {
-        //         echo '=== Verifying deployment health ==='
-        //         sh '''
-        //             sleep 5
-        //             if docker ps | grep -q aceest-app; then
-        //                 echo "Deployment SUCCESS - container is healthy"
-        //                 docker ps | grep aceest-app
-        //             else
-        //                 echo "Container crashed - triggering rollback..."
-
-        //                 PREV_TAG=$(docker images ${IMAGE_NAME} \
-        //                     --format "{{.Tag}}" \
-        //                     | grep "^v1\\." \
-        //                     | grep -v "^${BUILD_TAG}$" \
-        //                     | sort -t. -k2 -rn \
-        //                     | head -1)
-
-        //                 if [ -n "$PREV_TAG" ]; then
-        //                     echo "Rolling back to ${IMAGE_NAME}:${PREV_TAG}"
-        //                     docker stop aceest-app 2>/dev/null || true
-        //                     docker rm aceest-app 2>/dev/null || true
-        //                     docker run -d \
-        //                         --name aceest-app \
-        //                         -p 5000:5000 \
-        //                         --restart unless-stopped \
-        //                         ${IMAGE_NAME}:${PREV_TAG}
-        //                     echo "Rollback complete - running ${PREV_TAG}"
-        //                 else
-        //                     echo "No previous image found for rollback"
-        //                     exit 1
-        //                 fi
-        //             fi
-        //         '''
-        //     }
-        // }
     }
 
     post {
         success {
-            echo "BUILD SUCCESSFUL - Deployed ${IMAGE_NAME}:${BUILD_TAG}"
+            echo "✓ BUILD SUCCESSFUL - Deployed ${IMAGE_NAME}:${BUILD_TAG}"
+            sh 'kubectl get pods -n ${KUBE_NS} -l app=aceest-fitness' || true
         }
         failure {
-            echo "BUILD FAILED - Check the logs above for errors."
+            echo "❌ BUILD FAILED - Check the logs above for errors."
+            sh '''
+                echo "--- Deployment status ---"
+                kubectl get all -n ${KUBE_NS} || true
+                echo ""
+                echo "--- Recent pod events ---"
+                kubectl describe pods -n ${KUBE_NS} -l app=aceest-fitness | tail -50 || true
+            ''' || true
         }
         always {
             echo '=== Pipeline finished ==='
