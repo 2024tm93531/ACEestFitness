@@ -37,7 +37,7 @@ spec:
     spec:
       containers:
         - name: aceest-app
-          image: 2024tm93531/aceest-fitness:stable
+          image: 2024tm93531/aceest-fitness:latest
           ports:
             - containerPort: 5000
           envFrom:
