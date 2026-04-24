@@ -22,7 +22,7 @@ pipeline {
     environment {
         IMAGE_NAME = "2024tm93531/aceest-fitness"
         BUILD_TAG  = "v1.${BUILD_NUMBER}"
-        // DOCKER_HUB_USER = credentials('2024tm93531')
+        #DOCKER_HUB_USER = credentials('dockerhub-username')
         KUBE_NS    = "aceest"
         // Explicit kubeconfig path
         KUBECONFIG = "/var/jenkins_home/.kube/config"
@@ -101,13 +101,14 @@ pipeline {
                 '''
             }
         }
-         stage('Push to Docker Hub') {
+
+        stage('Push to Docker Hub') {
             steps {
                 echo '=== Stage 7: Push to Docker Hub ==='
                 withCredentials([usernamePassword(
                     credentialsId: 'dockerhub-credentials',
-                    usernameVariable: '2024tm93531',
-                    passwordVariable: 'Welcome@1234'
+                    usernameVariable: 'DOCKER_USER',
+                    passwordVariable: 'DOCKER_PASS'
                 )]) {
                     sh '''
                         echo "$DOCKER_PASS" | docker login -u "$DOCKER_USER" --password-stdin
@@ -338,7 +339,9 @@ pipeline {
     post {
         success {
             echo "✓ BUILD SUCCESSFUL - Deployed ${IMAGE_NAME}:${BUILD_TAG}"
-            sh 'kubectl get pods -n ${KUBE_NS} -l app=aceest-fitness' || true
+            sh '''
+                kubectl get pods -n ${KUBE_NS} -l app=aceest-fitness || true
+            '''
         }
         failure {
             echo "❌ BUILD FAILED - Check the logs above for errors."
@@ -348,11 +351,13 @@ pipeline {
                 echo ""
                 echo "--- Recent pod events ---"
                 kubectl describe pods -n ${KUBE_NS} -l app=aceest-fitness | tail -50 || true
-            ''' || true
+            '''
         }
         always {
             echo '=== Pipeline finished ==='
-            sh 'docker images | grep aceest-fitness || true'
+            sh '''
+                docker images | grep aceest-fitness || true
+            '''
         }
     }
 }
