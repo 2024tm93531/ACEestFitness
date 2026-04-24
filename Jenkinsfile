@@ -22,7 +22,7 @@ pipeline {
     environment {
         IMAGE_NAME = "2024tm93531/aceest-fitness"
         BUILD_TAG  = "v1.${BUILD_NUMBER}"
-        #DOCKER_HUB_USER = credentials('dockerhub-username')
+        //#DOCKER_HUB_USER = credentials('dockerhub-username')
         KUBE_NS    = "aceest"
         // Explicit kubeconfig path
         KUBECONFIG = "/var/jenkins_home/.kube/config"
