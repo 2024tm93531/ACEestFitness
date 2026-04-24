@@ -20,8 +20,9 @@ pipeline {
     }
 
     environment {
-        IMAGE_NAME = "aceest-fitness"
+        IMAGE_NAME = "2024tm93531/aceest-fitness"
         BUILD_TAG  = "v1.${BUILD_NUMBER}"
+        DOCKER_HUB_USER = credentials('dockerhub-username')
         KUBE_NS    = "aceest"
         // Explicit kubeconfig path
         KUBECONFIG = "/var/jenkins_home/.kube/config"
@@ -98,6 +99,24 @@ pipeline {
                     echo "=== Images built and tagged ==="
                     docker images | grep ${IMAGE_NAME}
                 '''
+            }
+        }
+         stage('Push to Docker Hub') {
+            steps {
+                echo '=== Stage 7: Push to Docker Hub ==='
+                withCredentials([usernamePassword(
+                    credentialsId: 'dockerhub-credentials',
+                    usernameVariable: '2024tm93531',
+                    passwordVariable: 'Welcome@1234'
+                )]) {
+                    sh '''
+                        echo "$DOCKER_PASS" | docker login -u "$DOCKER_USER" --password-stdin
+                        docker push ${IMAGE_NAME}:${BUILD_TAG}
+                        docker push ${IMAGE_NAME}:latest
+                        docker logout
+                        echo "Push complete: ${IMAGE_NAME}:${BUILD_TAG}"
+                    '''
+                }
             }
         }
 
