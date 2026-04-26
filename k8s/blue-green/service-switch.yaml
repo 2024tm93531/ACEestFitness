@@ -22,6 +22,26 @@ spec:
       targetPort: 5000
       nodePort: 30080
 ---
+# Staging service — always points at blue for direct access / rollback validation
+apiVersion: v1
+kind: Service
+metadata:
+  name: aceest-blue-staging
+  namespace: aceest
+  labels:
+    app: aceest-fitness
+    role: staging
+spec:
+  type: NodePort
+  selector:
+    app: aceest-fitness
+    version: blue
+  ports:
+    - name: http
+      port: 5000
+      targetPort: 5000
+      nodePort: 30085
+---
 # Staging service — always points at green for validation before switch
 apiVersion: v1
 kind: Service
