@@ -344,6 +344,104 @@ pipeline {
                 }
             }
         }
+
+        stage('Access Info') {
+            steps {
+                echo '=== Application Access — Port Forward Commands ==='
+                script {
+                    switch (params.DEPLOY_STRATEGY) {
+
+                        case 'rolling-update':
+                            sh """
+                                echo ""
+                                echo "Strategy: Rolling Update"
+                                echo "Service:  aceest-rolling-service (NodePort 30084)"
+                                echo ""
+                                echo "Run to access the app:"
+                                echo "  kubectl port-forward svc/aceest-rolling-service 5000:5000 -n ${KUBE_NS}"
+                                echo ""
+                                echo "Then open: http://localhost:5000"
+                                echo ""
+                                kubectl get svc aceest-rolling-service -n ${KUBE_NS} || true
+                            """
+                            break
+
+                        case 'blue-green':
+                            sh """
+                                echo ""
+                                echo "Strategy: Blue-Green"
+                                echo "Live service:    aceest-service (NodePort 30080)"
+                                echo "Staging service: aceest-green-staging (NodePort 30081)"
+                                echo ""
+                                echo "Run to access live traffic (blue or green, whichever is active):"
+                                echo "  kubectl port-forward svc/aceest-service 5000:5000 -n ${KUBE_NS}"
+                                echo ""
+                                echo "Run to access green staging directly:"
+                                echo "  kubectl port-forward svc/aceest-green-staging 5001:5000 -n ${KUBE_NS}"
+                                echo ""
+                                echo "Then open: http://localhost:5000 (live)  |  http://localhost:5001 (green staging)"
+                                echo ""
+                                kubectl get svc aceest-service aceest-green-staging -n ${KUBE_NS} || true
+                            """
+                            break
+
+                        case 'canary':
+                            sh """
+                                echo ""
+                                echo "Strategy: Canary"
+                                echo "Service: aceest-canary-service (NodePort 30082)"
+                                echo "         Routes to both stable (~90%) and canary (~10%) pods"
+                                echo ""
+                                echo "Run to access the app:"
+                                echo "  kubectl port-forward svc/aceest-canary-service 5000:5000 -n ${KUBE_NS}"
+                                echo ""
+                                echo "Then open: http://localhost:5000"
+                                echo ""
+                                kubectl get svc aceest-canary-service -n ${KUBE_NS} || true
+                            """
+                            break
+
+                        case 'shadow':
+                            sh """
+                                echo ""
+                                echo "Strategy: Shadow"
+                                echo "Production service: aceest-production-service (NodePort 30083)"
+                                echo "Shadow service:     aceest-shadow-service     (ClusterIP — internal only)"
+                                echo ""
+                                echo "Run to access production traffic:"
+                                echo "  kubectl port-forward svc/aceest-production-service 5000:5000 -n ${KUBE_NS}"
+                                echo ""
+                                echo "Run to inspect shadow (internal) traffic:"
+                                echo "  kubectl port-forward svc/aceest-shadow-service 5001:5000 -n ${KUBE_NS}"
+                                echo ""
+                                echo "Then open: http://localhost:5000 (production)"
+                                echo ""
+                                kubectl get svc aceest-production-service aceest-shadow-service -n ${KUBE_NS} || true
+                            """
+                            break
+
+                        case 'ab-testing':
+                            sh """
+                                echo ""
+                                echo "Strategy: A/B Testing"
+                                echo "Variant A (control): aceest-variant-a-svc (ClusterIP)"
+                                echo "Variant B (test):    aceest-variant-b-svc (ClusterIP)"
+                                echo ""
+                                echo "Run to access Variant A:"
+                                echo "  kubectl port-forward svc/aceest-variant-a-svc 5000:5000 -n ${KUBE_NS}"
+                                echo ""
+                                echo "Run to access Variant B:"
+                                echo "  kubectl port-forward svc/aceest-variant-b-svc 5001:5000 -n ${KUBE_NS}"
+                                echo ""
+                                echo "Then open: http://localhost:5000 (Variant A)  |  http://localhost:5001 (Variant B)"
+                                echo ""
+                                kubectl get svc aceest-variant-a-svc aceest-variant-b-svc -n ${KUBE_NS} || true
+                            """
+                            break
+                    }
+                }
+            }
+        }
     }
 
     post {
