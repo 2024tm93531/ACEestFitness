@@ -110,13 +110,49 @@ pipeline {
                     usernameVariable: 'DOCKER_USER',
                     passwordVariable: 'DOCKER_PASS'
                 )]) {
-                    sh '''
-                        echo "$DOCKER_PASS" | docker login -u "$DOCKER_USER" --password-stdin
+                    sh """
+                        echo "\$DOCKER_PASS" | docker login -u "\$DOCKER_USER" --password-stdin
                         docker push ${IMAGE_NAME}:${BUILD_TAG}
                         docker push ${IMAGE_NAME}:latest
-                        docker logout
                         echo "Push complete: ${IMAGE_NAME}:${BUILD_TAG}"
-                    '''
+                    """
+
+                    if (params.DEPLOY_STRATEGY == 'blue-green') {
+                        sh """
+                            echo "\$DOCKER_PASS" | docker login -u "\$DOCKER_USER" --password-stdin
+                            docker tag ${IMAGE_NAME}:latest       ${IMAGE_NAME}:blue
+                            docker push ${IMAGE_NAME}:blue
+
+                            docker tag ${IMAGE_NAME}:${BUILD_TAG} ${IMAGE_NAME}:green
+                            docker push ${IMAGE_NAME}:green
+
+                            docker logout
+                            echo "Blue-Green tags pushed: ${IMAGE_NAME}:blue | ${IMAGE_NAME}:green"
+                        """
+                    } else if (params.DEPLOY_STRATEGY == 'ab-testing') {
+                        sh """
+                            echo "\$DOCKER_PASS" | docker login -u "\$DOCKER_USER" --password-stdin
+                            docker tag ${IMAGE_NAME}:latest       ${IMAGE_NAME}:variant-a
+                            docker push ${IMAGE_NAME}:variant-a
+
+                            docker tag ${IMAGE_NAME}:${BUILD_TAG} ${IMAGE_NAME}:variant-b
+                            docker push ${IMAGE_NAME}:variant-b
+
+                            docker logout
+                            echo "A/B tags pushed: ${IMAGE_NAME}:variant-a | ${IMAGE_NAME}:variant-b"
+                        """
+                    } else if (params.DEPLOY_STRATEGY == 'shadow') {
+                        sh """
+                            echo "\$DOCKER_PASS" | docker login -u "\$DOCKER_USER" --password-stdin
+                            docker tag ${IMAGE_NAME}:${BUILD_TAG} ${IMAGE_NAME}:shadow
+                            docker push ${IMAGE_NAME}:shadow
+
+                            docker logout
+                            echo "Shadow tag pushed: ${IMAGE_NAME}:shadow"
+                        """
+                    } else {
+                        sh 'docker logout'
+                    }
                 }
             }
         }
@@ -220,8 +256,6 @@ pipeline {
 
                                     kubectl apply -f k8s/blue-green/service-switch.yaml -n ${KUBE_NS}
 
-                                    sed -i 's|aceest-fitness:green|aceest-fitness:${BUILD_TAG}|g' \\
-                                        k8s/blue-green/green-deployment.yaml
                                     kubectl apply -f k8s/blue-green/green-deployment.yaml -n ${KUBE_NS}
                                     kubectl rollout status deployment/aceest-green \\
                                         -n ${KUBE_NS} --timeout=120s
@@ -272,8 +306,6 @@ pipeline {
                                 echo "Deploying: Shadow"
                                 sh """
                                     set -e
-                                    sed -i 's|aceest-fitness:shadow|aceest-fitness:${BUILD_TAG}|g' \\
-                                        k8s/shadow/shadow-deployment.yaml
                                     kubectl apply -f k8s/shadow/shadow-deployment.yaml -n ${KUBE_NS}
                                     kubectl rollout status deployment/aceest-shadow \\
                                         -n ${KUBE_NS} --timeout=120s
@@ -285,12 +317,10 @@ pipeline {
                                 echo "Deploying: A/B Testing"
                                 sh """
                                     set -e
-                                    sed -i 's|aceest-fitness:variant-b|aceest-fitness:${BUILD_TAG}|g' \\
-                                        k8s/ab-testing/ab-deployment.yaml
                                     kubectl apply -f k8s/ab-testing/ab-deployment.yaml -n ${KUBE_NS}
                                     kubectl rollout status deployment/aceest-variant-b \\
                                         -n ${KUBE_NS} --timeout=120s
-                                    echo "✓ A/B Testing live — Variant B = ${BUILD_TAG}"
+                                    echo "✓ A/B Testing live — Variant A = :variant-a | Variant B = :variant-b"
                                 """
                                 break
 
