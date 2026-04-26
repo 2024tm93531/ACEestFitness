@@ -1,20 +1,4 @@
-# ─────────────────────────────────────────────
-# ROLLING UPDATE STRATEGY
-#
-# Kubernetes default strategy — replaces pods incrementally.
-# Ensures zero downtime by keeping some pods running at all times.
-#
-# Key parameters:
-#   maxSurge:        1 extra pod beyond desired count during update
-#   maxUnavailable:  0 — no pod goes down until replacement is ready
-#
-# Usage:
-#   Deploy:  kubectl apply -f rolling-update.yaml
-#   Trigger: kubectl set image deploy/aceest-rolling aceest-app=IMAGE:NEWTAG -n aceest
-#   Watch:   kubectl rollout status deployment/aceest-rolling -n aceest
-#   Undo:    kubectl rollout undo deployment/aceest-rolling -n aceest
-# ─────────────────────────────────────────────
-
+# k8s/rolling-update/rolling-update.yaml
 apiVersion: apps/v1
 kind: Deployment
 metadata:
@@ -23,31 +7,30 @@ metadata:
   labels:
     app: aceest-fitness
     strategy: rolling-update
-  annotations:
-    kubernetes.io/change-cause: "Initial rolling deployment - v2.0.0"
 spec:
-  replicas: 3
+  replicas: 1               
   selector:
     matchLabels:
       app: aceest-fitness
       strategy: rolling-update
   strategy:
-    type: RollingUpdate
-    rollingUpdate:
-      maxSurge: 1            # Allow 1 extra pod during update (4 pods momentarily)
-      maxUnavailable: 0      # Never reduce below desired count (zero downtime)
+    type: Recreate          # MUST be Recreate so the old pod releases the SQLite PVC lock
   template:
     metadata:
       labels:
         app: aceest-fitness
         strategy: rolling-update
     spec:
-      terminationGracePeriodSeconds: 30     # Allow in-flight requests to finish
+      terminationGracePeriodSeconds: 30
       containers:
         - name: aceest-app
           image: 2024tm93531/aceest-fitness:latest
           ports:
             - containerPort: 5000
+          # --- ADDED: Mount the SQLite Database Volume ---
+          volumeMounts:
+            - name: db-volume
+              mountPath: /data
           envFrom:
             - configMapRef:
                 name: aceest-config
@@ -59,18 +42,12 @@ spec:
               port: 5000
             initialDelaySeconds: 10
             periodSeconds: 5
-            failureThreshold: 3
           livenessProbe:
             httpGet:
               path: /api/health
               port: 5000
             initialDelaySeconds: 15
             periodSeconds: 10
-            failureThreshold: 3
-          lifecycle:
-            preStop:
-              exec:
-                command: ["/bin/sh", "-c", "sleep 5"]   # Drain in-flight requests
           resources:
             requests:
               memory: "128Mi"
@@ -78,27 +55,11 @@ spec:
             limits:
               memory: "256Mi"
               cpu: "250m"
----
-# HorizontalPodAutoscaler — scales between 2 and 8 replicas based on CPU
-apiVersion: autoscaling/v2
-kind: HorizontalPodAutoscaler
-metadata:
-  name: aceest-rolling-hpa
-  namespace: aceest
-spec:
-  scaleTargetRef:
-    apiVersion: apps/v1
-    kind: Deployment
-    name: aceest-rolling
-  minReplicas: 2
-  maxReplicas: 8
-  metrics:
-    - type: Resource
-      resource:
-        name: cpu
-        target:
-          type: Utilization
-          averageUtilization: 70
+      # --- ADDED: Reference the PVC ---
+      volumes:
+        - name: db-volume
+          persistentVolumeClaim:
+            claimName: sqlite-data
 ---
 # Service for rolling update deployment
 apiVersion: v1
