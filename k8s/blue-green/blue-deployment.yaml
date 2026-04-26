@@ -1,16 +1,4 @@
-# ─────────────────────────────────────────────
-# BLUE-GREEN DEPLOYMENT STRATEGY
-# Blue = current stable version (live traffic)
-# Green = new version (staged, tested, then switched)
-#
-# Usage:
-#   1. Deploy blue:   kubectl apply -f blue-deployment.yaml
-#   2. Deploy green:  kubectl apply -f green-deployment.yaml
-#   3. Test green via: kubectl port-forward svc/aceest-green 5001:5000
-#   4. Switch traffic: kubectl apply -f service-switch.yaml  (points to green)
-#   5. Rollback:       edit service-switch.yaml selector back to blue
-# ─────────────────────────────────────────────
-
+# k8s/blue-green/blue-deployment.yaml
 apiVersion: apps/v1
 kind: Deployment
 metadata:
@@ -21,7 +9,7 @@ metadata:
     version: blue
     strategy: blue-green
 spec:
-  replicas: 2
+  replicas: 1               # Reduced to 1 for SQLite
   selector:
     matchLabels:
       app: aceest-fitness
@@ -37,6 +25,10 @@ spec:
           image: 2024tm93531/aceest-fitness:blue
           ports:
             - containerPort: 5000
+          # --- ADDED: Volume Mount ---
+          volumeMounts:
+            - name: db-volume
+              mountPath: /data
           envFrom:
             - configMapRef:
                 name: aceest-config
@@ -54,10 +46,7 @@ spec:
               port: 5000
             initialDelaySeconds: 15
             periodSeconds: 10
-          resources:
-            requests:
-              memory: "128Mi"
-              cpu: "100m"
-            limits:
-              memory: "256Mi"
-              cpu: "250m"
+      volumes:
+        - name: db-volume
+          persistentVolumeClaim:
+            claimName: sqlite-data
