@@ -23,7 +23,7 @@ metadata:
     version: stable
     strategy: canary
 spec:
-  replicas: 9
+  replicas: 3
   selector:
     matchLabels:
       app: aceest-fitness
