@@ -38,7 +38,7 @@ spec:
     spec:
       containers:
         - name: aceest-app
-          image: YOUR_DOCKERHUB_USERNAME/aceest-fitness:stable
+          image: 2024tm93531/aceest-fitness:latest
           ports:
             - containerPort: 5000
           envFrom:
@@ -96,7 +96,7 @@ spec:
     spec:
       containers:
         - name: shadow-app
-          image: YOUR_DOCKERHUB_USERNAME/aceest-fitness:shadow
+          image: 2024tm93531/aceest-fitness:shadow
           ports:
             - containerPort: 5000
           env:

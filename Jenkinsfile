@@ -189,6 +189,10 @@ pipeline {
                             echo ""
                             echo "--- Applying configmap ---"
                             kubectl apply -f k8s/configmap.yaml -n ${KUBE_NS}
+
+                            echo ""
+                            echo "--- Applying PVC ---"
+                            kubectl apply -f k8s/sqlite-pvc.yaml -n ${KUBE_NS}
                         '''
 
                         switch (params.DEPLOY_STRATEGY) {
@@ -200,7 +204,7 @@ pipeline {
                                     kubectl apply -f k8s/rolling-update/rolling-update.yaml -n ${KUBE_NS}
                                     kubectl set image deployment/aceest-rolling \\
                                         aceest-app=${IMAGE_NAME}:${BUILD_TAG} \\
-                                        -n ${KUBE_NS} --record
+                                        -n ${KUBE_NS}
                                     kubectl rollout status deployment/aceest-rolling \\
                                         -n ${KUBE_NS} --timeout=120s
                                 """
@@ -210,7 +214,13 @@ pipeline {
                                 echo "Deploying: Blue-Green"
                                 sh """
                                     set -e
-                                    sed -i 's|aceest-fitness:green|${IMAGE_NAME}:${BUILD_TAG}|g' \\
+                                    kubectl apply -f k8s/blue-green/blue-deployment.yaml -n ${KUBE_NS}
+                                    kubectl rollout status deployment/aceest-blue \\
+                                        -n ${KUBE_NS} --timeout=120s
+
+                                    kubectl apply -f k8s/blue-green/service-switch.yaml -n ${KUBE_NS}
+
+                                    sed -i 's|aceest-fitness:green|aceest-fitness:${BUILD_TAG}|g' \\
                                         k8s/blue-green/green-deployment.yaml
                                     kubectl apply -f k8s/blue-green/green-deployment.yaml -n ${KUBE_NS}
                                     kubectl rollout status deployment/aceest-green \\
@@ -245,7 +255,7 @@ pipeline {
                                     echo "Canary replicas: \$CANARY_REPLICAS/\$TOTAL"
                                     echo "Stable replicas: \$STABLE_REPLICAS/\$TOTAL"
 
-                                    sed -i 's|aceest-fitness:canary|${IMAGE_NAME}:${BUILD_TAG}|g' \\
+                                    sed -i 's|aceest-fitness:canary|aceest-fitness:${BUILD_TAG}|g' \\
                                         k8s/canary/canary-deployment.yaml
                                     kubectl apply -f k8s/canary/canary-deployment.yaml -n ${KUBE_NS}
                                     kubectl scale deployment aceest-stable \\
@@ -262,7 +272,7 @@ pipeline {
                                 echo "Deploying: Shadow"
                                 sh """
                                     set -e
-                                    sed -i 's|aceest-fitness:shadow|${IMAGE_NAME}:${BUILD_TAG}|g' \\
+                                    sed -i 's|aceest-fitness:shadow|aceest-fitness:${BUILD_TAG}|g' \\
                                         k8s/shadow/shadow-deployment.yaml
                                     kubectl apply -f k8s/shadow/shadow-deployment.yaml -n ${KUBE_NS}
                                     kubectl rollout status deployment/aceest-shadow \\
@@ -275,7 +285,7 @@ pipeline {
                                 echo "Deploying: A/B Testing"
                                 sh """
                                     set -e
-                                    sed -i 's|aceest-fitness:variant-b|${IMAGE_NAME}:${BUILD_TAG}|g' \\
+                                    sed -i 's|aceest-fitness:variant-b|aceest-fitness:${BUILD_TAG}|g' \\
                                         k8s/ab-testing/ab-deployment.yaml
                                     kubectl apply -f k8s/ab-testing/ab-deployment.yaml -n ${KUBE_NS}
                                     kubectl rollout status deployment/aceest-variant-b \\

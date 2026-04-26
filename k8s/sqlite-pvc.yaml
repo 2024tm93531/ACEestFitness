@@ -1,0 +1,20 @@
+# k8s/sqlite-pvc.yaml
+# PersistentVolumeClaim for SQLite database used by the aceest-fitness Docker application.
+# Mount this volume at the path where the app writes its .db file (e.g. /app/data).
+# The deployment must reference the claim name "sqlite-data" via a volumeMount.
+
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: sqlite-data
+  namespace: aceest
+  labels:
+    app: aceest-fitness
+    component: database
+spec:
+  accessModes:
+    - ReadWriteOnce        # SQLite supports only single-writer access
+  resources:
+    requests:
+      storage: 1Gi         # Adjust to suit your database size requirements
+  storageClassName: standard  # Replace with your cluster's StorageClass (e.g. gp2, local-path)

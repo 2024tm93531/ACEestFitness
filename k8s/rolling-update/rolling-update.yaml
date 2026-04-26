@@ -45,7 +45,7 @@ spec:
       terminationGracePeriodSeconds: 30     # Allow in-flight requests to finish
       containers:
         - name: aceest-app
-          image: YOUR_DOCKERHUB_USERNAME/aceest-fitness:v2.0.0
+          image: 2024tm93531/aceest-fitness:latest
           ports:
             - containerPort: 5000
           envFrom:

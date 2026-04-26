@@ -7,7 +7,7 @@ metadata:
     app: aceest-fitness
 data:
   FLASK_ENV: "production"
-  DB_PATH: "/data/aceest_fitness.db"
+  DB_PATH: "/app/aceest_fitness.db"
 ---
 apiVersion: v1
 kind: Secret
