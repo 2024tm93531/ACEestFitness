@@ -105,11 +105,13 @@ pipeline {
         stage('Push to Docker Hub') {
             steps {
                 echo '=== Stage 7: Push to Docker Hub ==='
+
                 withCredentials([usernamePassword(
                     credentialsId: 'dockerhub-credentials',
                     usernameVariable: 'DOCKER_USER',
                     passwordVariable: 'DOCKER_PASS'
                 )]) {
+
                     sh """
                         echo "\$DOCKER_PASS" | docker login -u "\$DOCKER_USER" --password-stdin
                         docker push ${IMAGE_NAME}:${BUILD_TAG}
@@ -117,40 +119,36 @@ pipeline {
                         echo "Push complete: ${IMAGE_NAME}:${BUILD_TAG}"
                     """
 
-                    if (params.DEPLOY_STRATEGY == 'blue-green') {
-                        sh """
-                            echo "\$DOCKER_PASS" | docker login -u "\$DOCKER_USER" --password-stdin
-                            docker tag ${IMAGE_NAME}:latest       ${IMAGE_NAME}:blue
-                            docker push ${IMAGE_NAME}:blue
+                    script {
+                        if (params.DEPLOY_STRATEGY == 'blue-green') {
+                            sh """
+                                docker tag ${IMAGE_NAME}:latest       ${IMAGE_NAME}:blue
+                                docker push ${IMAGE_NAME}:blue
 
-                            docker tag ${IMAGE_NAME}:${BUILD_TAG} ${IMAGE_NAME}:green
-                            docker push ${IMAGE_NAME}:green
+                                docker tag ${IMAGE_NAME}:${BUILD_TAG} ${IMAGE_NAME}:green
+                                docker push ${IMAGE_NAME}:green
 
-                            docker logout
-                            echo "Blue-Green tags pushed: ${IMAGE_NAME}:blue | ${IMAGE_NAME}:green"
-                        """
-                    } else if (params.DEPLOY_STRATEGY == 'ab-testing') {
-                        sh """
-                            echo "\$DOCKER_PASS" | docker login -u "\$DOCKER_USER" --password-stdin
-                            docker tag ${IMAGE_NAME}:latest       ${IMAGE_NAME}:variant-a
-                            docker push ${IMAGE_NAME}:variant-a
+                                echo "Blue-Green tags pushed"
+                            """
+                        } else if (params.DEPLOY_STRATEGY == 'ab-testing') {
+                            sh """
+                                docker tag ${IMAGE_NAME}:latest       ${IMAGE_NAME}:variant-a
+                                docker push ${IMAGE_NAME}:variant-a
 
-                            docker tag ${IMAGE_NAME}:${BUILD_TAG} ${IMAGE_NAME}:variant-b
-                            docker push ${IMAGE_NAME}:variant-b
+                                docker tag ${IMAGE_NAME}:${BUILD_TAG} ${IMAGE_NAME}:variant-b
+                                docker push ${IMAGE_NAME}:variant-b
 
-                            docker logout
-                            echo "A/B tags pushed: ${IMAGE_NAME}:variant-a | ${IMAGE_NAME}:variant-b"
-                        """
-                    } else if (params.DEPLOY_STRATEGY == 'shadow') {
-                        sh """
-                            echo "\$DOCKER_PASS" | docker login -u "\$DOCKER_USER" --password-stdin
-                            docker tag ${IMAGE_NAME}:${BUILD_TAG} ${IMAGE_NAME}:shadow
-                            docker push ${IMAGE_NAME}:shadow
+                                echo "A/B tags pushed"
+                            """
+                        } else if (params.DEPLOY_STRATEGY == 'shadow') {
+                            sh """
+                                docker tag ${IMAGE_NAME}:${BUILD_TAG} ${IMAGE_NAME}:shadow
+                                docker push ${IMAGE_NAME}:shadow
 
-                            docker logout
-                            echo "Shadow tag pushed: ${IMAGE_NAME}:shadow"
-                        """
-                    } else {
+                                echo "Shadow tag pushed"
+                            """
+                        }
+
                         sh 'docker logout'
                     }
                 }
